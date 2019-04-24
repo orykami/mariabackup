@@ -1,0 +1,28 @@
+# MariaDB user
+MYSQL_USER="mariabackup"
+# MariaDB password
+MYSQL_PASSWORD="mySecretPassword"
+# MariaDB host
+MYSQL_HOST="localhost"
+# MariaDB port
+MYSQL_PORT=3306
+# Path to mysql command
+MYSQL="$(which mysql)"
+# Path to mariabackup command
+MARIABACKUP="$(which mariabackup)"
+# Path to mysqladmin command
+MYSQLADMIN="$(which mysqladmin)"
+# MySQL custom options to connect with
+ARGS=""
+# Master directory to store snapshots
+SNAPSHOT_DIR=/tmp/mariabackup
+# Master directory to store full snapshots
+FULL_SNAPSHOT_DIR=${SNAPSHOT_DIR}/full
+# Master directory to store incr snapshots
+INCR_SNAPSHOT_DIR=${SNAPSHOT_DIR}/incr
+# How many seconds should we base our incremental snapshot on previous master snapshot ?
+# Snapshot lifecyle (in seconds)
+FULL_SNAPSHOT_CYCLE=604800
+# How many snapshots (full+incr) should we keep for history
+# Snapshot ttl (in days)
+SNAPSHOT_TTL=1
