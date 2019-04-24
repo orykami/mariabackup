@@ -9,9 +9,9 @@ MARIABACKUP="$(which mariabackup)"
 MYSQLADMIN="$(which mysqladmin)"
 ARGS=""
 
-if [[ -f ../config/mariabackup.conf ]]
+if [[ -f config/mariabackup.conf ]]
 then
-  . ../config/mariabackup.conf
+  . config/mariabackup.conf
 elif [[ -f ~/.mariabackup.conf ]]
 then
   . ~/.mariabackup.conf
