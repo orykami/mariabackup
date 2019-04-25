@@ -34,6 +34,7 @@ USEROPTIONS="--user=${MYSQL_USER} --password=${MYSQL_PASSWORD} --host=${MYSQL_HO
 START_TIME=`date +%s`
 DATE="$(date +"%d-%m-%Y")"
 TIME="$(date +"%H-%M-%S")"
+RUN_DATE="$(date +%F_%H-%M)"
 
 LOG_ARGS="-s -t mariabackup"
 
@@ -53,16 +54,22 @@ mkdir_writable_directory() {
   return 0
 }
 
+# Write log to stdout/syslog
+log() {
+  logger -p $1 ${LOG_ARGS} $2
+  return 0
+}
+
 ##
 # Main ()
 ##
-logger -p user.info ${LOG_ARGS} "Start mariabackup.sh (Galera/MariaDB backup agent)"
+log user.info "Start mariabackup.sh (Galera/MariaDB backup agent)"
 
 # Create FULL_SNAPSHOT directory
 mkdir_writable_directory ${FULL_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  logger -p user.err ${LOG_ARGS} "'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
+  log user.err "'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
   exit 1
 fi
 
@@ -70,49 +77,53 @@ fi
 mkdir_writable_directory ${INCR_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  logger -p user.err ${LOG_ARGS} "'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
+  log user.err "'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
   exit 1
 fi
 
 # Ensure that mariabackup is able to connect to MariaDB server
 if ! `echo 'exit' | ${MYSQL} -s ${USEROPTIONS}`
 then
-  logger -p user.err ${LOG_ARGS}  "Can't connect to MariaDB instance (user/password missmatch ?)";
+  log user.err "Can't connect to MariaDB instance (user/password missmatch ?)";
   exit 1
 fi
 
-# Find latest full backup snapshot as reference for later
+# Retrieve latest full snapshot as reference for later
 LATEST_FULL_SNAPSHOT=`find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -printf "%P\n" | sort -nr | head -1`
 LATEST_FULL_SNAPSHOT_AGE=`stat -c %Y ${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}`
+# Define next snapshot directories for FULL/INCR modes
+NEXT_FULL_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/${RUN_DATE}
+NEXT_INCR_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
+
+# Ensure that mariabackup is not running on the same repository (Lock mode)
+if [[ -d ${NEXT_FULL_SNAPSHOT_DIR} ]]
+then
+  log user.info "Snapshot (FULL) ${RUN_DATE} already in progress/done, skip"
+  exit 0
+elif [[ -d ${NEXT_FULL_SNAPSHOT_DIR} ]]
+then
+  log user.info "Snapshot (INCR) ${RUN_DATE} already in progress/done, skip"
+  exit 0
+fi
 
 # If latest full snapshot is expired, we should create a new full snapshost
 if [ "$LATEST_FULL_SNAPSHOT" -a `expr ${LATEST_FULL_SNAPSHOT_AGE} + ${FULL_SNAPSHOT_CYCLE} + 5` -ge ${START_TIME} ]
 then
-  logger -p user.info -s "Create new incremental snapshot"
+  log user.info "Create new incremental snapshot"
   # Create incremental snapshot repository if needed
-  mkdir_writable_directory ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
+  mkdir_writable_directory ${NEXT_INCR_SNAPSHOT_DIR}
   if [[ $? -ne 0 ]]; then
-    logger -p user.err ${LOG_ARGS} "'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
+    log user.info "'${NEXT_INCR_SNAPSHOT_DIR}' does not exist or is not writable."
     exit 1
   fi
-
   # Find latest incremental snapshot as reference for later
-  LATEST_INCR_SNAPSHOT=`find ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT} -mindepth 1  -maxdepth 1 -type d | sort -nr | head -1`
+  LATEST_INCR_SNAPSHOT=`find ${NEXT_INCR_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d | sort -nr | head -1`
   if [[ -z ${LATEST_INCR_SNAPSHOT} ]]
   then
     INCR_BASE_DIR=${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
   else
     INCR_BASE_DIR=${LATEST_INCR_SNAPSHOT}
   fi
-
-  # Detect if current snapshot is already in progress (or done by another worker)
-  NEXT_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/`date +%F_%H-%M`
-  if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
-  then
-    logger -p user.info ${LOG_ARGS} "Snapshot `date +%F_%H-%M` already done, skip"
-    exit 0
-  fi
-
   # Create next incremental snapshot directory
   mkdir -p ${NEXT_SNAPSHOT_DIR}
   # Start next incremental snapshot with mariabackup agent
@@ -123,13 +134,9 @@ then
     --stream=xbstream | gzip > ${NEXT_SNAPSHOT_DIR}/backup.stream.gz
 else
   # Create next full snapshot directory
-  logger -p user.info ${LOG_ARGS} "Create new full snapshot"
-  NEXT_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/`date +%F_%H-%M`
-  if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
-  then
-    logger -p user.info ${LOG_ARGS} "Snapshot `date +%F_%H-%M` already done, skip"
-    exit 0
-  fi
+  log user.info "Create new full snapshot"
+  NEXT_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/${RUN_DATE}
+
   # Create next full snapshot directory
   mkdir -p ${NEXT_SNAPSHOT_DIR}
   # Start next full snapshot with mariabackup agent
@@ -140,15 +147,15 @@ else
 fi
 
 MINS=$((${FULL_SNAPSHOT_CYCLE} * (${SNAPSHOT_TTL} + 1 ) / 60))
-logger -p user.info ${LOG_ARGS} "Cleaning backup older than ${MINS} minute(s)"
+log user.info "Cleaning backup older than ${MINS} minute(s)"
 # Purge all expired snapshot cycles
 for DEL in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -mmin +${MINS} -printf "%P\n"`
 do
-  logger -p user.info ${LOG_ARGS} "Purged backup '${DEL}'"
+  log user.info "Purged backup '${DEL}'"
   rm -rf ${FULL_SNAPSHOT_DIR}/${DEL}
   rm -rf ${INCR_SNAPSHOT_DIR}/${DEL}
 done
 
 DURATION=$((`date +%s` - ${START_TIME}))
-logger -p user.info ${LOG_ARGS} "Backup completed in ${DURATION} seconds"
+log user.info "Backup completed in ${DURATION} seconds"
 exit 0
