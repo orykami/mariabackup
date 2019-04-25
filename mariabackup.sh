@@ -129,9 +129,9 @@ then
   # Start next incremental snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
-    --extra-lsndir=${NEXT_SNAPSHOT_DIR} \
+    --extra-lsndir=${NEXT_INCR_SNAPSHOT_DIR} \
     --incremental-basedir=${INCR_BASE_DIR} \
-    --stream=xbstream | gzip > ${NEXT_SNAPSHOT_DIR}/backup.stream.gz
+    --stream=xbstream | gzip > ${NEXT_INCR_SNAPSHOT_DIR}/backup.stream.gz
 else
   # Create next full snapshot directory
   log user.info "Create new full snapshot"
@@ -140,8 +140,8 @@ else
   # Start next full snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
-    --extra-lsndir=${NEXT_SNAPSHOT_DIR} \
-    --stream=xbstream | gzip > ${NEXT_SNAPSHOT_DIR}/backup.stream.gz
+    --extra-lsndir=${NEXT_FULL_SNAPSHOT_DIR} \
+    --stream=xbstream | gzip > ${NEXT_FULL_SNAPSHOT_DIR}/backup.stream.gz
 fi
 
 MINS=$((${FULL_SNAPSHOT_CYCLE} * (${SNAPSHOT_TTL} + 1 ) / 60))
