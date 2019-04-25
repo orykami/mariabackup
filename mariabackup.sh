@@ -35,6 +35,8 @@ START_TIME=`date +%s`
 DATE="$(date +"%d-%m-%Y")"
 TIME="$(date +"%H-%M-%S")"
 
+LOG_ARGS="-s -t mariabackup"
+
 
 # Create recursive directory specified
 mkdir_writable_directory() {
@@ -54,13 +56,13 @@ mkdir_writable_directory() {
 ##
 # Main ()
 ##
-logger -p user.info -s "Start mariabackup.sh (Galera/MariaDB backup agent)"
+logger -p user.info ${LOG_ARGS} "Start mariabackup.sh (Galera/MariaDB backup agent)"
 
 # Create FULL_SNAPSHOT directory
 mkdir_writable_directory ${FULL_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  logger -p user.err -s "'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
+  logger -p user.err ${LOG_ARGS} "'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
   exit 1
 fi
 
@@ -68,14 +70,14 @@ fi
 mkdir_writable_directory ${INCR_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  logger -p user.err -s  "'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
+  logger -p user.err ${LOG_ARGS} "'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
   exit 1
 fi
 
 # Ensure that mariabackup is able to connect to MariaDB server
 if ! `echo 'exit' | ${MYSQL} -s ${USEROPTIONS}`
 then
-  logger -p user.err -s  "Can't connect to MariaDB instance (user/password missmatch ?)";
+  logger -p user.err ${LOG_ARGS}  "Can't connect to MariaDB instance (user/password missmatch ?)";
   exit 1
 fi
 
@@ -90,7 +92,7 @@ then
   # Create incremental snapshot repository if needed
   mkdir_writable_directory ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
   if [[ $? -ne 0 ]]; then
-    logger -p user.err -s "'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
+    logger -p user.err ${LOG_ARGS} "'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
     exit 1
   fi
 
@@ -107,7 +109,7 @@ then
   NEXT_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/`date +%F_%H-%M`
   if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
   then
-    logger -p user.info -s "Snapshot `date +%F_%H-%M` already done, skip"
+    logger -p user.info ${LOG_ARGS} "Snapshot `date +%F_%H-%M` already done, skip"
     exit 0
   fi
 
@@ -121,11 +123,11 @@ then
     --stream=xbstream | gzip > ${NEXT_SNAPSHOT_DIR}/backup.stream.gz
 else
   # Create next full snapshot directory
-  logger -p user.info -s "Create new full snapshot"
+  logger -p user.info ${LOG_ARGS} "Create new full snapshot"
   NEXT_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/`date +%F_%H-%M`
   if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
   then
-    logger -p user.info -s "Snapshot `date +%F_%H-%M` already done, skip"
+    logger -p user.info ${LOG_ARGS} "Snapshot `date +%F_%H-%M` already done, skip"
     exit 0
   fi
   # Create next full snapshot directory
@@ -138,15 +140,15 @@ else
 fi
 
 MINS=$((${FULL_SNAPSHOT_CYCLE} * (${SNAPSHOT_TTL} + 1 ) / 60))
-logger -p user.info -s "Cleaning backup older than ${MINS} minute(s)"
+logger -p user.info ${LOG_ARGS} "Cleaning backup older than ${MINS} minute(s)"
 # Purge all expired snapshot cycles
 for DEL in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -mmin +${MINS} -printf "%P\n"`
 do
-  logger -p user.info -s "Purged backup '${DEL}'"
+  logger -p user.info ${LOG_ARGS} "Purged backup '${DEL}'"
   rm -rf ${FULL_SNAPSHOT_DIR}/${DEL}
   rm -rf ${INCR_SNAPSHOT_DIR}/${DEL}
 done
 
 DURATION=$((`date +%s` - ${START_TIME}))
-logger -p user.info -s "Backup completed in ${DURATION} seconds"
+logger -p user.info ${LOG_ARGS} "Backup completed in ${DURATION} seconds"
 exit 0
