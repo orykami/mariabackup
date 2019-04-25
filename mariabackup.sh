@@ -103,10 +103,16 @@ then
     INCR_BASE_DIR=${LATEST_INCR_SNAPSHOT}
   fi
 
-  # Create next incremental snapshot directory
-  NEXT_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/`date +%F_%H-%M-%S`
-  mkdir -p ${NEXT_SNAPSHOT_DIR}
+  # Detect if current snapshot is already in progress (or done by another worker)
+  NEXT_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/`date +%F_%H-%M`
+  if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
+  then
+    echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Snapshot `date +%F_%H-%M` already done, skip"
+    exit 0
+  fi
 
+  # Create next incremental snapshot directory
+  mkdir -p ${NEXT_SNAPSHOT_DIR}
   # Start next incremental snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
@@ -116,9 +122,14 @@ then
 else
   # Create next full snapshot directory
   echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Create new full snapshot"
-  NEXT_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/`date +%F_%H-%M-%S`
+  NEXT_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/`date +%F_%H-%M`
+  if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
+  then
+    echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Snapshot `date +%F_%H-%M` already done, skip"
+    exit 0
+  fi
+  # Create next full snapshot directory
   mkdir -p ${NEXT_SNAPSHOT_DIR}
-
   # Start next full snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
