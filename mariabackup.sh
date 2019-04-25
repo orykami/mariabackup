@@ -26,7 +26,7 @@ elif [[ -f /etc/mariabackup.conf ]]
 then
   . /etc/mariabackup.conf
 else
-  echo -e "Configuration file (mariabackup.conf) not found."
+  logger -p user.err -s "Configuration file (mariabackup.conf) not found."
   exit 1
 fi
 
@@ -54,13 +54,13 @@ mkdir_writable_directory() {
 ##
 # Main ()
 ##
-echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Start mariabackup.sh (Galera/MariaDB backup agent)"
+logger -p user.info -s "Start mariabackup.sh (Galera/MariaDB backup agent)"
 
 # Create FULL_SNAPSHOT directory
 mkdir_writable_directory ${FULL_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [error] '${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
+  logger -p user.err -s "'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
   exit 1
 fi
 
@@ -68,14 +68,14 @@ fi
 mkdir_writable_directory ${INCR_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [error] '${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
+  logger -p user.err -s  "'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
   exit 1
 fi
 
 # Ensure that mariabackup is able to connect to MariaDB server
 if ! `echo 'exit' | ${MYSQL} -s ${USEROPTIONS}`
 then
-  echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [error] Can't connect to MariaDB instance (user/password missmatch ?)";
+  logger -p user.err -s  "Can't connect to MariaDB instance (user/password missmatch ?)";
   exit 1
 fi
 
@@ -86,11 +86,11 @@ LATEST_FULL_SNAPSHOT_AGE=`stat -c %Y ${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT
 # If latest full snapshot is expired, we should create a new full snapshost
 if [ "$LATEST_FULL_SNAPSHOT" -a `expr ${LATEST_FULL_SNAPSHOT_AGE} + ${FULL_SNAPSHOT_CYCLE} + 5` -ge ${START_TIME} ]
 then
-  echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Create new incremental snapshot"
+  logger -p user.info -s "Create new incremental snapshot"
   # Create incremental snapshot repository if needed
   mkdir_writable_directory ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
   if [[ $? -ne 0 ]]; then
-    echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [error] '${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
+    logger -p user.err -s "'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
     exit 1
   fi
 
@@ -107,7 +107,7 @@ then
   NEXT_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/`date +%F_%H-%M`
   if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
   then
-    echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Snapshot `date +%F_%H-%M` already done, skip"
+    logger -p user.info -s "Snapshot `date +%F_%H-%M` already done, skip"
     exit 0
   fi
 
@@ -121,11 +121,11 @@ then
     --stream=xbstream | gzip > ${NEXT_SNAPSHOT_DIR}/backup.stream.gz
 else
   # Create next full snapshot directory
-  echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Create new full snapshot"
+  logger -p user.info -s "Create new full snapshot"
   NEXT_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/`date +%F_%H-%M`
   if [[ -d ${NEXT_SNAPSHOT_DIR} ]]
   then
-    echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Snapshot `date +%F_%H-%M` already done, skip"
+    logger -p user.info -s "Snapshot `date +%F_%H-%M` already done, skip"
     exit 0
   fi
   # Create next full snapshot directory
@@ -138,15 +138,15 @@ else
 fi
 
 MINS=$((${FULL_SNAPSHOT_CYCLE} * (${SNAPSHOT_TTL} + 1 ) / 60))
-echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Cleaning backup older than ${MINS} minute(s)"
+logger -p user.info -s "Cleaning backup older than ${MINS} minute(s)"
 # Purge all expired snapshot cycles
 for DEL in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -mmin +${MINS} -printf "%P\n"`
 do
-  echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Purged backup '${DEL}'"
+  logger -p user.info -s "Purged backup '${DEL}'"
   rm -rf ${FULL_SNAPSHOT_DIR}/${DEL}
   rm -rf ${INCR_SNAPSHOT_DIR}/${DEL}
 done
 
 DURATION=$((`date +%s` - ${START_TIME}))
-echo -e "[`date +"%d/%m/%Y %H:%M:%S"`] ${MYSQL_HOST} [info] Backup completed in ${DURATION} seconds"
+logger -p user.info -s "Backup completed in ${DURATION} seconds"
 exit 0
