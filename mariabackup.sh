@@ -92,15 +92,15 @@ fi
 LATEST_FULL_SNAPSHOT=`find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -printf "%P\n" | sort -nr | head -1`
 LATEST_FULL_SNAPSHOT_AGE=`stat -c %Y ${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}`
 # Define next snapshot directories for FULL/INCR modes
-NEXT_FULL_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/${RUN_DATE}
-NEXT_INCR_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/${RUN_DATE}
+NEXT_FULL_SNAPSHOT=${FULL_SNAPSHOT_DIR}/${RUN_DATE}
+NEXT_INCR_SNAPSHOT=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/${RUN_DATE}
 
 # Ensure that mariabackup is not running on the same repository (Lock mode)
-if [[ -d ${NEXT_FULL_SNAPSHOT_DIR} ]]
+if [[ -d ${NEXT_FULL_SNAPSHOT} ]]
 then
   log user.info "Snapshot (FULL) ${RUN_DATE} already in progress/done, skip"
   exit 0
-elif [[ -d ${NEXT_INCR_SNAPSHOT_DIR} ]]
+elif [[ -d ${NEXT_INCR_SNAPSHOT} ]]
 then
   log user.info "Snapshot (INCR) ${RUN_DATE} already in progress/done, skip"
   exit 0
@@ -111,13 +111,13 @@ if [ "$LATEST_FULL_SNAPSHOT" -a `expr ${LATEST_FULL_SNAPSHOT_AGE} + ${FULL_SNAPS
 then
   log user.info "Create new incremental snapshot"
   # Create incremental snapshot repository if needed
-  mkdir_writable_directory ${NEXT_INCR_SNAPSHOT_DIR}
+  mkdir_writable_directory ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
   if [[ $? -ne 0 ]]; then
-    log user.info "'${NEXT_INCR_SNAPSHOT_DIR}' does not exist or is not writable."
+    log user.error "'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
     exit 1
   fi
   # Find latest incremental snapshot as reference for later
-  LATEST_INCR_SNAPSHOT=`find ${NEXT_INCR_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d | sort -nr | head -1`
+  LATEST_INCR_SNAPSHOT=`find ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT} -mindepth 1 -maxdepth 1 -type d | sort -nr | head -1`
   if [[ -z ${LATEST_INCR_SNAPSHOT} ]]
   then
     INCR_BASE_DIR=${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
@@ -125,13 +125,13 @@ then
     INCR_BASE_DIR=${LATEST_INCR_SNAPSHOT}
   fi
   # Create next incremental snapshot directory
-  mkdir -p ${NEXT_INCR_SNAPSHOT_DIR}
+  mkdir -p ${NEXT_INCR_SNAPSHOT}
   # Start next incremental snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
-    --extra-lsndir=${NEXT_INCR_SNAPSHOT_DIR} \
+    --extra-lsndir=${NEXT_INCR_SNAPSHOT} \
     --incremental-basedir=${INCR_BASE_DIR} \
-    --stream=xbstream | gzip > ${NEXT_INCR_SNAPSHOT_DIR}/backup.stream.gz
+    --stream=xbstream | gzip > ${NEXT_INCR_SNAPSHOT}/snapshot.stream.gz
 else
   # Create next full snapshot directory
   log user.info "Create new full snapshot"
@@ -141,7 +141,7 @@ else
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
     --extra-lsndir=${NEXT_FULL_SNAPSHOT_DIR} \
-    --stream=xbstream | gzip > ${NEXT_FULL_SNAPSHOT_DIR}/backup.stream.gz
+    --stream=xbstream | gzip > ${NEXT_FULL_SNAPSHOT_DIR}/snapshot.stream.gz
 fi
 
 MINS=$((${FULL_SNAPSHOT_CYCLE} * (${SNAPSHOT_TTL} + 1 ) / 60))
