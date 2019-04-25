@@ -93,7 +93,7 @@ LATEST_FULL_SNAPSHOT=`find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d 
 LATEST_FULL_SNAPSHOT_AGE=`stat -c %Y ${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}`
 # Define next snapshot directories for FULL/INCR modes
 NEXT_FULL_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/${RUN_DATE}
-NEXT_INCR_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
+NEXT_INCR_SNAPSHOT_DIR=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/${RUN_DATE}
 
 # Ensure that mariabackup is not running on the same repository (Lock mode)
 if [[ -d ${NEXT_FULL_SNAPSHOT_DIR} ]]
@@ -125,7 +125,7 @@ then
     INCR_BASE_DIR=${LATEST_INCR_SNAPSHOT}
   fi
   # Create next incremental snapshot directory
-  mkdir -p ${NEXT_SNAPSHOT_DIR}
+  mkdir -p ${NEXT_INCR_SNAPSHOT_DIR}
   # Start next incremental snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
@@ -135,10 +135,8 @@ then
 else
   # Create next full snapshot directory
   log user.info "Create new full snapshot"
-  NEXT_SNAPSHOT_DIR=${FULL_SNAPSHOT_DIR}/${RUN_DATE}
-
   # Create next full snapshot directory
-  mkdir -p ${NEXT_SNAPSHOT_DIR}
+  mkdir -p ${NEXT_FULL_SNAPSHOT_DIR}
   # Start next full snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
