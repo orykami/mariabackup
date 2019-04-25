@@ -16,9 +16,9 @@ FULL_SNAPSHOT_CYCLE=604800
 ARGS=""
 
 # Load script configuration from usual paths
-if [[ -f config/mariabackup.conf ]]
+if [[ -f ~/mariabackup/config/mariabackup.conf ]]
 then
-  . config/mariabackup.conf
+  . ~/mariabackup/config/mariabackup.conf
 elif [[ -f ~/.mariabackup.conf ]]
 then
   . ~/config/mariabackup.conf
