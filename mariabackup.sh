@@ -136,12 +136,12 @@ else
   # Create next full snapshot directory
   log user.info "Create new full snapshot"
   # Create next full snapshot directory
-  mkdir -p ${NEXT_FULL_SNAPSHOT_DIR}
+  mkdir -p ${NEXT_FULL_SNAPSHOT}
   # Start next full snapshot with mariabackup agent
   ${MARIABACKUP} \
     --backup ${USEROPTIONS} ${ARGS} \
-    --extra-lsndir=${NEXT_FULL_SNAPSHOT_DIR} \
-    --stream=xbstream | gzip > ${NEXT_FULL_SNAPSHOT_DIR}/snapshot.stream.gz
+    --extra-lsndir=${NEXT_FULL_SNAPSHOT} \
+    --stream=xbstream | gzip > ${NEXT_FULL_SNAPSHOT}/snapshot.stream.gz
 fi
 
 MINS=$((${FULL_SNAPSHOT_CYCLE} * (${SNAPSHOT_TTL} + 1 ) / 60))
