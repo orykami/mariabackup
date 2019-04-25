@@ -100,7 +100,7 @@ if [[ -d ${NEXT_FULL_SNAPSHOT_DIR} ]]
 then
   log user.info "Snapshot (FULL) ${RUN_DATE} already in progress/done, skip"
   exit 0
-elif [[ -d ${NEXT_FULL_SNAPSHOT_DIR} ]]
+elif [[ -d ${NEXT_INCR_SNAPSHOT_DIR} ]]
 then
   log user.info "Snapshot (INCR) ${RUN_DATE} already in progress/done, skip"
   exit 0
