@@ -5,41 +5,69 @@
 # @author Orykami <88.jacquot.benoit@gmail.com>
 ##
 
-MYSQL_USER=""
+# Mariabackup agent configuration path
+CONFIG_PATH="/etc/mariabackup.conf"
+# MariaDB backup agent on your SQL server
+MYSQL_USER="mariabackup"
+# MariaDB backup agent password on your SQL server
 MYSQL_PASSWORD=""
+# MariaDB SQL server host
 MYSQL_HOST=localhost
+# MariaDB SQL server port
 MYSQL_PORT=3306
+# Path to `mysql` command on your system
 MYSQL="$(which mysql)"
+# Path to `mariabackup` command on your system
 MARIABACKUP="$(which mariabackup)"
+# Path to `mysqladmin` command on your system
 MYSQLADMIN="$(which mysqladmin)"
-FULL_SNAPSHOT_CYCLE=604800
-ARGS=""
+# Snapshot lifecyle (in seconds)
+# - Create a full snapshot every ${FULL_SNAPSHOT_CYCLE} seconds)
+# - Create a incr snapshot between every ${FULL_SNAPSHOT_CYCLE} seconds
+FULL_SNAPSHOT_CYCLE=86400
+# Additionnal mariabackup` arguments for runtime
+MARIABACKUP_ARGS=""
 
-# Load script configuration from usual paths
-if [[ -f ~/mariabackup/config/mariabackup.conf ]]
+##
+# Retrieve configuration file from argument
+##
+while [[ $# > 1 ]]; do
+    case $1 in
+        # Configuration file (-c|--config)
+        -c|--config)
+            shift
+            CONFIG_PATH="$1"
+        ;;
+    esac
+    shift
+done
+
+##
+# Load script configuration from specified path, exit otherwise
+##
+if [[ -f ${CONFIG_PATH} ]]
 then
-  . ~/mariabackup/config/mariabackup.conf
-elif [[ -f ~/.mariabackup.conf ]]
-then
-  . ~/config/mariabackup.conf
-elif [[ -f /etc/mariabackup.conf ]]
-then
-  . /etc/mariabackup.conf
+  . ${CONFIG_PATH}
 else
-  logger -p user.err -s "Configuration file (mariabackup.conf) not found."
+  logger -p user.err -s "Configuration file ${CONFIG_PATH} not found."
   exit 1
 fi
 
+
+##
+# Default runtime vars
+##
 USEROPTIONS="--user=${MYSQL_USER} --password=${MYSQL_PASSWORD} --host=${MYSQL_HOST} --port=${MYSQL_PORT}"
 START_TIME=`date +%s`
 DATE="$(date +"%d-%m-%Y")"
 TIME="$(date +"%H-%M-%S")"
 RUN_DATE="$(date +%F_%H-%M)"
-
 LOG_ARGS="-s -t mariabackup"
 
-
+##
 # Create recursive directory specified
+# @param $1 Path to directory to create
+##
 mkdir_writable_directory() {
   if [[ $# -ne 1 ]] || [[ -z $1 ]]
   then
@@ -54,14 +82,18 @@ mkdir_writable_directory() {
   return 0
 }
 
+##
 # Write log to stdout/syslog
+# @param $1 log.level Log level
+# @param $2 Log message
+##
 log() {
   logger -p $1 ${LOG_ARGS} $2
   return 0
 }
 
 ##
-# Main ()
+# Main script ()
 ##
 log user.info "Start mariabackup.sh (Galera/MariaDB backup agent)"
 
