@@ -191,7 +191,7 @@ if [[ ${SNAPSHOT_COUNT} -gt ${SNAPSHOT_PRESERVE_COUNT} ]]; then
   TO_PURGE_SNAPSHOT_COUNT=$(expr ${SNAPSHOT_COUNT} - ${SNAPSHOT_PRESERVE_COUNT})
   if [[ ${TO_PURGE_SNAPSHOT_COUNT} -gt 0 ]]; then
     log user.info "Start pruning ${TO_PURGE_SNAPSHOT_COUNT} snapshot(s)"
-    for OLD_SNAPSHOT in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d | sort -n | head -${TO_PURGE_SNAPSHOT_COUNT}`
+    for OLD_SNAPSHOT in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -printf "%P\n" | sort -n | head -${TO_PURGE_SNAPSHOT_COUNT}`
     do
       log user.info "Purged backup '${OLD_SNAPSHOT}'"
       rm -rf ${FULL_SNAPSHOT_DIR}/${OLD_SNAPSHOT}
