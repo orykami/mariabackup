@@ -25,6 +25,14 @@ MYSQLADMIN="$(which mysqladmin)"
 # - Create a full snapshot every ${FULL_SNAPSHOT_CYCLE} seconds)
 # - Create a incr snapshot between every ${FULL_SNAPSHOT_CYCLE} seconds
 FULL_SNAPSHOT_CYCLE=86400
+# Default snapshot directory
+SNAPSHOT_DIR=/tmp/mariabackup
+# Default FULL snapshot directory
+FULL_SNAPSHOT_DIR=${SNAPSHOT_DIR}/full
+# Default INCR snapshot directory
+INCR_SNAPSHOT_DIR=${SNAPSHOT_DIR}/incr
+# How many snapshot do we want to keep
+SNAPSHOT_PRESERVE_COUNT=5
 # Additionnal mariabackup` arguments for runtime
 MARIABACKUP_ARGS=""
 
@@ -160,7 +168,7 @@ then
   mkdir -p ${NEXT_INCR_SNAPSHOT}
   # Start next incremental snapshot with mariabackup agent
   ${MARIABACKUP} \
-    --backup ${USEROPTIONS} ${ARGS} \
+    --backup ${USEROPTIONS} ${MARIABACKUP_ARGS} \
     --extra-lsndir=${NEXT_INCR_SNAPSHOT} \
     --incremental-basedir=${INCR_BASE_DIR} \
     --stream=xbstream | gzip > ${NEXT_INCR_SNAPSHOT}/snapshot.stream.gz
@@ -171,20 +179,26 @@ else
   mkdir -p ${NEXT_FULL_SNAPSHOT}
   # Start next full snapshot with mariabackup agent
   ${MARIABACKUP} \
-    --backup ${USEROPTIONS} ${ARGS} \
+    --backup ${USEROPTIONS} ${MARIABACKUP_ARGS} \
     --extra-lsndir=${NEXT_FULL_SNAPSHOT} \
     --stream=xbstream | gzip > ${NEXT_FULL_SNAPSHOT}/snapshot.stream.gz
 fi
 
-MINS=$((${FULL_SNAPSHOT_CYCLE} * (${SNAPSHOT_TTL} + 1 ) / 60))
-log user.info "Cleaning backup older than ${MINS} minute(s)"
-# Purge all expired snapshot cycles
-for DEL in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -mmin +${MINS} -printf "%P\n"`
-do
-  log user.info "Purged backup '${DEL}'"
-  rm -rf ${FULL_SNAPSHOT_DIR}/${DEL}
-  rm -rf ${INCR_SNAPSHOT_DIR}/${DEL}
-done
+# Retrieve how many snapshot cycles are already in storage, and purge old snapshots if required
+SNAPSHOT_COUNT=$(find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d | wc -l)
+log user.info "Current snapshot count : ${SNAPSHOT_COUNT}/${SNAPSHOT_PRESERVE_COUNT}"
+if [[ ${SNAPSHOT_COUNT} -gt ${SNAPSHOT_PRESERVE_COUNT} ]]; then
+  TO_PURGE_SNAPSHOT_COUNT=$(expr ${SNAPSHOT_COUNT} - ${SNAPSHOT_PRESERVE_COUNT})
+  if [[ ${TO_PURGE_SNAPSHOT_COUNT} -gt 0 ]]; then
+    log user.info "Start pruning ${TO_PURGE_SNAPSHOT_COUNT} snapshot(s)"
+    for OLD_SNAPSHOT in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d | sort -n | head -${TO_PURGE_SNAPSHOT_COUNT}`
+    do
+      log user.info "Purged backup '${OLD_SNAPSHOT}'"
+      rm -rf ${FULL_SNAPSHOT_DIR}/${OLD_SNAPSHOT}
+      rm -rf ${INCR_SNAPSHOT_DIR}/${OLD_SNAPSHOT}
+    done
+  fi
+fi
 
 DURATION=$((`date +%s` - ${START_TIME}))
 log user.info "Backup completed in ${DURATION} seconds"

@@ -25,4 +25,4 @@ INCR_SNAPSHOT_DIR=${SNAPSHOT_DIR}/incr
 FULL_SNAPSHOT_CYCLE=604800
 # How many snapshots (full+incr) should we keep for history
 # Snapshot ttl (in days)
-SNAPSHOT_TTL=1
+SNAPSHOT_PRESERVE_COUNT=5
