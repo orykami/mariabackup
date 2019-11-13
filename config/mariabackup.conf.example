@@ -26,3 +26,5 @@ FULL_SNAPSHOT_CYCLE=604800
 # How many snapshots (full+incr) should we keep for history
 # Snapshot ttl (in days)
 SNAPSHOT_PRESERVE_COUNT=5
+# Slack Webhook URL to notify from backup state (keep it secret !)
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/xxxxx/xxxxx"

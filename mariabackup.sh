@@ -2,9 +2,11 @@
 
 ##
 # [Mariabackup agent]
-# @author Orykami <88.jacquot.benoit@gmail.com>
+# @author orykami <88.jacquot.benoit@gmail.com>
 ##
 
+# Hostname
+HOST=${HOSTNAME}
 # Mariabackup agent configuration path
 CONFIG_PATH="/etc/mariabackup.conf"
 # MariaDB backup agent on your SQL server
@@ -17,10 +19,14 @@ MYSQL_HOST=localhost
 MYSQL_PORT=3306
 # Path to `mysql` command on your system
 MYSQL="$(which mysql)"
+# Webhook URL to notify for backup status
+SLACK_WEBHOOK_URL=""
 # Path to `mariabackup` command on your system
 MARIABACKUP="$(which mariabackup)"
 # Path to `mysqladmin` command on your system
 MYSQLADMIN="$(which mysqladmin)"
+# Path to `curl` command on your system
+CURL="$(which curl)"
 # Snapshot lifecyle (in seconds)
 # - Create a full snapshot every ${FULL_SNAPSHOT_CYCLE} seconds)
 # - Create a incr snapshot between every ${FULL_SNAPSHOT_CYCLE} seconds
@@ -61,7 +67,6 @@ else
   exit 1
 fi
 
-
 ##
 # Default runtime vars
 ##
@@ -101,6 +106,20 @@ log() {
 }
 
 ##
+# Notify slack via webhook with arguments
+# @param $1 Notification message
+#
+##
+notify_slack() {
+  # Notify #devops on Slack network if webhook is specified
+  if [[ -n ${SLACK_WEBHOOK_URL} ]]; then
+    printf -v JSON '{"text":"[%s][%s] %s"}' ${HOST} ${RUN_DATE} $1
+    ${CURL} -X POST -H 'Content-type: application/json' --data "$JSON" ${SLACK_WEBHOOK_URL} > /dev/null 2>&1
+  fi
+  return 0
+}
+
+##
 # Main script ()
 ##
 log user.info "Start mariabackup.sh (Galera/MariaDB backup agent)"
@@ -109,7 +128,9 @@ log user.info "Start mariabackup.sh (Galera/MariaDB backup agent)"
 mkdir_writable_directory ${FULL_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  log user.err "'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
+  ERROR_MESSAGE="'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
+  log user.err ${ERROR_MESSAGE}
+  notify_slack ${ERROR_MESSAGE}
   exit 1
 fi
 
@@ -117,14 +138,18 @@ fi
 mkdir_writable_directory ${INCR_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
-  log user.err "'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
+  ERROR_MESSAGE="'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
+  log user.err ${ERROR_MESSAGE}
+  notify_slack ${ERROR_MESSAGE}
   exit 1
 fi
 
 # Ensure that mariabackup is able to connect to MariaDB server
 if ! `echo 'exit' | ${MYSQL} -s ${USEROPTIONS}`
 then
-  log user.err "Can't connect to MariaDB instance (user/password missmatch ?)";
+  ERROR_MESSAGE="Can't connect to MariaDB instance (user/password missmatch ?)"
+  log user.err ${ERROR_MESSAGE}
+  notify_slack ${ERROR_MESSAGE}
   exit 1
 fi
 
@@ -153,7 +178,9 @@ then
   # Create incremental snapshot repository if needed
   mkdir_writable_directory ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
   if [[ $? -ne 0 ]]; then
-    log user.error "'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
+    ERROR_MESSAGE="'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
+    log user.err ${ERROR_MESSAGE}
+    notify_slack ${ERROR_MESSAGE}
     exit 1
   fi
   # Find latest incremental snapshot as reference for later
@@ -200,6 +227,14 @@ if [[ ${SNAPSHOT_COUNT} -gt ${SNAPSHOT_PRESERVE_COUNT} ]]; then
   fi
 fi
 
+# Create log entry for backup trace
 DURATION=$((`date +%s` - ${START_TIME}))
 log user.info "Backup completed in ${DURATION} seconds"
+
+# Notify #devops on Slack network if webhook is specified
+if [[ -n ${SLACK_WEBHOOK_URL} ]]; then
+  SUCCESS_MESSAGE="MariaDB snapshot completed in ${DURATION} second(s)"
+  notify_slack ${SUCCESS_MESSAGE}
+fi
+
 exit 0
