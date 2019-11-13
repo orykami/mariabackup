@@ -129,8 +129,8 @@ mkdir_writable_directory ${FULL_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
   ERROR_MESSAGE="'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
-  log user.err ${ERROR_MESSAGE}
-  notify_slack ${ERROR_MESSAGE}
+  log user.err "${ERROR_MESSAGE}"
+  notify_slack "${ERROR_MESSAGE}"
   exit 1
 fi
 
@@ -139,8 +139,8 @@ mkdir_writable_directory ${INCR_SNAPSHOT_DIR}
 if [[ $? -ne 0 ]]
 then
   ERROR_MESSAGE="'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
-  log user.err ${ERROR_MESSAGE}
-  notify_slack ${ERROR_MESSAGE}
+  log user.err "${ERROR_MESSAGE}"
+  notify_slack "${ERROR_MESSAGE}"
   exit 1
 fi
 
@@ -148,8 +148,8 @@ fi
 if ! `echo 'exit' | ${MYSQL} -s ${USEROPTIONS}`
 then
   ERROR_MESSAGE="Can't connect to MariaDB instance (user/password missmatch ?)"
-  log user.err ${ERROR_MESSAGE}
-  notify_slack ${ERROR_MESSAGE}
+  log user.err "${ERROR_MESSAGE}"
+  notify_slack "${ERROR_MESSAGE}"
   exit 1
 fi
 
@@ -179,8 +179,8 @@ then
   mkdir_writable_directory ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
   if [[ $? -ne 0 ]]; then
     ERROR_MESSAGE="'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
-    log user.err ${ERROR_MESSAGE}
-    notify_slack ${ERROR_MESSAGE}
+    log user.err "${ERROR_MESSAGE}"
+    notify_slack "${ERROR_MESSAGE}"
     exit 1
   fi
   # Find latest incremental snapshot as reference for later
@@ -234,7 +234,7 @@ log user.info "Backup completed in ${DURATION} seconds"
 # Notify #devops on Slack network if webhook is specified
 if [[ -n ${SLACK_WEBHOOK_URL} ]]; then
   SUCCESS_MESSAGE="MariaDB snapshot completed in ${DURATION} second(s)"
-  notify_slack ${SUCCESS_MESSAGE}
+  notify_slack "${SUCCESS_MESSAGE}"
 fi
 
 exit 0
