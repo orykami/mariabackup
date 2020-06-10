@@ -1,30 +1,20 @@
 # MariaDB user
-MYSQL_USER="mariabackup"
+MYSQL_USER='mariabackup'
 # MariaDB password
-MYSQL_PASSWORD="mySecretPassword"
+MYSQL_PASSWORD='mySecretPassword'
 # MariaDB host
-MYSQL_HOST="localhost"
+MYSQL_HOST='localhost'
 # MariaDB port
 MYSQL_PORT=3306
-# Path to mysql command
-MYSQL="$(which mysql)"
-# Path to mariabackup command
-MARIABACKUP="$(which mariabackup)"
-# Path to mysqladmin command
-MYSQLADMIN="$(which mysqladmin)"
-# MySQL custom options to connect with
-ARGS=""
-# Master directory to store snapshots
-SNAPSHOT_DIR=/tmp/mariabackup
-# Master directory to store full snapshots
-FULL_SNAPSHOT_DIR=${SNAPSHOT_DIR}/full
-# Master directory to store incr snapshots
-INCR_SNAPSHOT_DIR=${SNAPSHOT_DIR}/incr
-# How many seconds should we base our incremental snapshot on previous master snapshot ?
-# Snapshot lifecyle (in seconds)
-FULL_SNAPSHOT_CYCLE=604800
-# How many snapshots (full+incr) should we keep for history
-# Snapshot ttl (in days)
-SNAPSHOT_PRESERVE_COUNT=5
+# Arguments to mariabackup command
+MARIABACKUP_ARGS='--galera-info'
+# How many threads should we used by mariabackup command
+MARIABACKUP_THREADS=4
+# Directory where backups are stored
+BACKUP_DIR='/tmp/mariabackup'
+# How many threads should we used by mydumper command
+MYDUMPER_THREADS=4
+# How many backups should we keep for history (in days)
+BACKUP_TTL=3
 # Slack Webhook URL to notify from backup state (keep it secret !)
-SLACK_WEBHOOK_URL="https://hooks.slack.com/services/xxxxx/xxxxx"
+SLACK_WEBHOOK_URL='https://hooks.slack.com/services/xxxxx/xxxxx'
