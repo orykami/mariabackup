@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 ##
-# [Mariabackup agent]
+# [MariaDB backup script]
 # @author orykami <88.jacquot.benoit@gmail.com>
 ##
 
@@ -14,37 +14,31 @@ MYSQL_USER="mariabackup"
 # MariaDB backup agent password on your SQL server
 MYSQL_PASSWORD=""
 # MariaDB SQL server host
-MYSQL_HOST=localhost
+MYSQL_HOST="localhost"
 # MariaDB SQL server port
 MYSQL_PORT=3306
 # Path to `mysql` command on your system
 MYSQL="$(which mysql)"
 # Webhook URL to notify for backup status
 SLACK_WEBHOOK_URL=""
-# Path to `mariabackup` command on your system
+# Path to `mariabackup` binary on your system
 MARIABACKUP="$(which mariabackup)"
-# Path to `mysqladmin` command on your system
-MYSQLADMIN="$(which mysqladmin)"
-# Path to `curl` command on your system
+# Path to `myumper` binary on your system
+MYDUMPER="$(which mydumper)"
+# Path to `curl` binary on your system
 CURL="$(which curl)"
-# Snapshot lifecyle (in seconds)
-# - Create a full snapshot every ${FULL_SNAPSHOT_CYCLE} seconds)
-# - Create a incr snapshot between every ${FULL_SNAPSHOT_CYCLE} seconds
-FULL_SNAPSHOT_CYCLE=86400
-# Default snapshot directory
-SNAPSHOT_DIR=/tmp/mariabackup
-# Default FULL snapshot directory
-FULL_SNAPSHOT_DIR=${SNAPSHOT_DIR}/full
-# Default INCR snapshot directory
-INCR_SNAPSHOT_DIR=${SNAPSHOT_DIR}/incr
-# How many snapshot do we want to keep
-SNAPSHOT_PRESERVE_COUNT=5
+# Default mariabackup directory
+BACKUP_DIR=/tmp/mariabackup
+# How many threads should we used by mariabackup command
+MARIABACKUP_THREADS=4
+# How many threads should we used by mydumper command
+MYDUMPER_THREADS=4
+# How many backups do we want to keep (in days)
+BACKUP_TTL=3
 # Additionnal mariabackup` arguments for runtime
 MARIABACKUP_ARGS=""
 
-##
 # Retrieve configuration file from argument
-##
 while [[ $# > 1 ]]; do
     case $1 in
         # Configuration file (-c|--config)
@@ -56,9 +50,7 @@ while [[ $# > 1 ]]; do
     shift
 done
 
-##
 # Load script configuration from specified path, exit otherwise
-##
 if [[ -f ${CONFIG_PATH} ]]
 then
   . ${CONFIG_PATH}
@@ -67,15 +59,26 @@ else
   exit 1
 fi
 
-##
-# Default runtime vars
-##
-USEROPTIONS="--user=${MYSQL_USER} --password=${MYSQL_PASSWORD} --host=${MYSQL_HOST} --port=${MYSQL_PORT}"
-START_TIME=`date +%s`
-DATE="$(date +"%d-%m-%Y")"
-TIME="$(date +"%H-%M-%S")"
-RUN_DATE="$(date +%F_%H-%M)"
-LOG_ARGS="-s -t mariabackup"
+# Ensure mariabackup binary is defined in $PATH
+if [[ -z ${MARIABACKUP} ]]
+then
+  logger -p user.err -s "Cannot locate mariabackup binary in ${PATH}"
+  exit 1
+fi
+
+# Ensure mydumper binary is defined in $PATH
+if [[ -z ${MYDUMPER} ]]
+then
+  logger -p user.err -s "Cannot locate mydumper binary in ${PATH}"
+  exit 1
+fi
+
+# Ensure curl binary is defined in $PATH if SLACK_WEBHOOK_URL is specified
+if [[ -z ${CURL} ]] && [[ ! -z ${SLACK_WEBHOOK_URL} ]]
+then
+  logger -p user.err -s "Cannot locate curl binary in ${PATH} (required for Slack notification)"
+  exit 1
+fi
 
 ##
 # Create recursive directory specified
@@ -90,7 +93,6 @@ mkdir_writable_directory() {
   then
     mkdir -p $1 &> /dev/null || return 1
   fi
-
   chmod 600 $1 &> /dev/null || return 1
   return 0
 }
@@ -101,14 +103,13 @@ mkdir_writable_directory() {
 # @param $2 Log message
 ##
 log() {
-  logger -p $1 ${LOG_ARGS} $2
+  logger -p $1 -s -t mariabackup $2
   return 0
 }
 
 ##
 # Notify slack via webhook with arguments
 # @param $1 Notification message
-#
 ##
 notify_slack() {
   # Notify #devops on Slack network if webhook is specified
@@ -120,25 +121,85 @@ notify_slack() {
 }
 
 ##
+# Create dumps backup with mydumper
+##
+do_dumps_backup() {
+    ${MYDUMPER} \
+        --host=${MYSQL_HOST} \
+        --user=${MYSQL_USER} \
+        --password=${MYSQL_PASSWORD} \
+        --port=${MYSQL_PORT} \
+        --outputdir=${DUMPS_BACKUP_DIR} \
+        --compress \
+        --compress-protocol \
+        --rows=50000 \
+        --threads=${MYDUMPER_THREADS} \
+        --triggers \
+        --events \
+        --routines \
+        --build-empty-files \
+        --verbose 3 \
+        --regex '^(?!(mysql|test|performance_schema|information_schema))' \
+        --logfile ${CURRENT_BACKUP_DIR}/${TIME}/mydumper.log
+
+    if [[ $? -ne 0 ]]
+    then
+      ERROR_MESSAGE="Logical backup '${DUMPS_BACKUP_DIR}' failed"
+      log user.err "${ERROR_MESSAGE}"
+      notify_slack "${ERROR_MESSAGE}"
+    fi
+
+    return 0
+}
+
+##
+# Create files backup with mariabackup
+# @param string $1 Latest full backup for incremental backup setup
+##
+do_files_backup() {
+  if [[ $# -eq 1 && -d $1 ]]
+  then
+    ${MARIABACKUP} \
+      --backup ${USEROPTIONS} ${MARIABACKUP_ARGS} \
+      --parallel=${MARIABACKUP_THREADS} \
+      --extra-lsndir=${FILES_BACKUP_DIR} \
+      --incremental-basedir=$1 \
+      --stream=xbstream 2> ${CURRENT_BACKUP_DIR}/${TIME}/mariabackup.log \
+      | gzip > ${FILES_BACKUP_DIR}/snapshot.stream.gz
+  else
+    ${MARIABACKUP} \
+      --backup ${USEROPTIONS} ${MARIABACKUP_ARGS} \
+      --parallel=${MARIABACKUP_THREADS} \
+      --extra-lsndir=${FILES_BACKUP_DIR} \
+      --stream=xbstream 2> ${CURRENT_BACKUP_DIR}/${TIME}/mariabackup.log \
+      | gzip > ${FILES_BACKUP_DIR}/snapshot.stream.gz
+  fi
+
+  if [[ $? -ne 0 ]]
+  then
+    ERROR_MESSAGE="Physical backup '${FILES_BACKUP_DIR}' failed"
+    log user.err "${ERROR_MESSAGE}"
+    notify_slack "${ERROR_MESSAGE}"
+  fi
+
+  return 0
+}
+
+##
 # Main script ()
 ##
-log user.info "Start mariabackup.sh (Galera/MariaDB backup agent)"
-
-# Create FULL_SNAPSHOT directory
-mkdir_writable_directory ${FULL_SNAPSHOT_DIR}
+START_TIME=`date +%s`
+RUN_DATE="$(date +%F_%H-%M)"
+DATE="$(date +"%Y-%m-%d")"
+TIME="$(date +"%H-%M-00")"
+USEROPTIONS="--user=${MYSQL_USER} --password=${MYSQL_PASSWORD} --host=${MYSQL_HOST} --port=${MYSQL_PORT}"
+log user.info "Start mariabackup (MariaDB backup agent)"
+CURRENT_BACKUP_DIR="${BACKUP_DIR}/${DATE}"
+# Create CURRENT_BACKUP_DIR directory and subfolders
+mkdir_writable_directory ${CURRENT_BACKUP_DIR}
 if [[ $? -ne 0 ]]
 then
-  ERROR_MESSAGE="'${FULL_SNAPSHOT_DIR}' does not exist or is not writable."
-  log user.err "${ERROR_MESSAGE}"
-  notify_slack "${ERROR_MESSAGE}"
-  exit 1
-fi
-
-# Create INCR_SNAPSHOT directory
-mkdir_writable_directory ${INCR_SNAPSHOT_DIR}
-if [[ $? -ne 0 ]]
-then
-  ERROR_MESSAGE="'${INCR_SNAPSHOT_DIR}' does not exist or is not writable."
+  ERROR_MESSAGE="'${CURRENT_BACKUP_DIR}' does not exist or is not writable."
   log user.err "${ERROR_MESSAGE}"
   notify_slack "${ERROR_MESSAGE}"
   exit 1
@@ -147,84 +208,50 @@ fi
 # Ensure that mariabackup is able to connect to MariaDB server
 if ! `echo 'exit' | ${MYSQL} -s ${USEROPTIONS}`
 then
-  ERROR_MESSAGE="Can't connect to MariaDB instance (user/password missmatch ?)"
+  ERROR_MESSAGE="Can't connect to MariaDB instance (Host is up ?)"
   log user.err "${ERROR_MESSAGE}"
   notify_slack "${ERROR_MESSAGE}"
   exit 1
 fi
 
-# Retrieve latest full snapshot as reference for later
-LATEST_FULL_SNAPSHOT=`find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -printf "%P\n" | sort -nr | head -1`
-LATEST_FULL_SNAPSHOT_AGE=`stat -c %Y ${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}`
-# Define next snapshot directories for FULL/INCR modes
-NEXT_FULL_SNAPSHOT=${FULL_SNAPSHOT_DIR}/${RUN_DATE}
-NEXT_INCR_SNAPSHOT=${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}/${RUN_DATE}
+PREVIOUS_BACKUP_DIR=""
+# First, try to retrieve an existing previous backup for mariabackup incremental backup
+LAST_BACKUP_TIME=`find "${CURRENT_BACKUP_DIR}" -mindepth 1 -maxdepth 1 -type d | sort -nr | head -1`
+if [[ -d "${LAST_BACKUP_TIME}/files" ]]
+then
+  PREVIOUS_BACKUP_DIR="${LAST_BACKUP_TIME}/files"
+fi
 
-# Ensure that mariabackup is not running on the same repository (Lock mode)
-if [[ -d ${NEXT_FULL_SNAPSHOT} ]]
+# Create folders for backup storage
+FILES_BACKUP_DIR="${CURRENT_BACKUP_DIR}/${TIME}/files"
+DUMPS_BACKUP_DIR="${CURRENT_BACKUP_DIR}/${TIME}/dumps"
+
+if [[ -d ${FILES_BACKUP_DIR} ]] || [[ -d ${FILES_BACKUP_DIR} ]]
 then
-  log user.info "Snapshot (FULL) ${RUN_DATE} already in progress/done, skip"
-  exit 0
-elif [[ -d ${NEXT_INCR_SNAPSHOT} ]]
-then
-  log user.info "Snapshot (INCR) ${RUN_DATE} already in progress/done, skip"
+  ERROR_MESSAGE="Backup ${CURRENT_BACKUP_DIR}/${TIME} already exists"
+  log user.err "${ERROR_MESSAGE}"
+  notify_slack "${ERROR_MESSAGE}"
   exit 0
 fi
 
-# If latest full snapshot is expired, we should create a new full snapshost
-if [ "$LATEST_FULL_SNAPSHOT" -a `expr ${LATEST_FULL_SNAPSHOT_AGE} + ${FULL_SNAPSHOT_CYCLE} + 5` -ge ${START_TIME} ]
-then
-  log user.info "Create new incremental snapshot"
-  # Create incremental snapshot repository if needed
-  mkdir_writable_directory ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
-  if [[ $? -ne 0 ]]; then
-    ERROR_MESSAGE="'${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}' does not exist or is not writable."
-    log user.err "${ERROR_MESSAGE}"
-    notify_slack "${ERROR_MESSAGE}"
-    exit 1
-  fi
-  # Find latest incremental snapshot as reference for later
-  LATEST_INCR_SNAPSHOT=`find ${INCR_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT} -mindepth 1 -maxdepth 1 -type d | sort -nr | head -1`
-  if [[ -z ${LATEST_INCR_SNAPSHOT} ]]
-  then
-    INCR_BASE_DIR=${FULL_SNAPSHOT_DIR}/${LATEST_FULL_SNAPSHOT}
-  else
-    INCR_BASE_DIR=${LATEST_INCR_SNAPSHOT}
-  fi
-  # Create next incremental snapshot directory
-  mkdir -p ${NEXT_INCR_SNAPSHOT}
-  # Start next incremental snapshot with mariabackup agent
-  ${MARIABACKUP} \
-    --backup ${USEROPTIONS} ${MARIABACKUP_ARGS} \
-    --extra-lsndir=${NEXT_INCR_SNAPSHOT} \
-    --incremental-basedir=${INCR_BASE_DIR} \
-    --stream=xbstream | gzip > ${NEXT_INCR_SNAPSHOT}/snapshot.stream.gz
-else
-  # Create next full snapshot directory
-  log user.info "Create new full snapshot"
-  # Create next full snapshot directory
-  mkdir -p ${NEXT_FULL_SNAPSHOT}
-  # Start next full snapshot with mariabackup agent
-  ${MARIABACKUP} \
-    --backup ${USEROPTIONS} ${MARIABACKUP_ARGS} \
-    --extra-lsndir=${NEXT_FULL_SNAPSHOT} \
-    --stream=xbstream | gzip > ${NEXT_FULL_SNAPSHOT}/snapshot.stream.gz
-fi
+mkdir_writable_directory ${FILES_BACKUP_DIR}
+mkdir_writable_directory ${DUMPS_BACKUP_DIR}
+
+# Do physical backup via mariabackup and logical backup via mydumper
+do_files_backup ${PREVIOUS_BACKUP_DIR}
+do_dumps_backup
 
 # Retrieve how many snapshot cycles are already in storage, and purge old snapshots if required
-SNAPSHOT_COUNT=$(find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d | wc -l)
-log user.info "Current snapshot count : ${SNAPSHOT_COUNT}/${SNAPSHOT_PRESERVE_COUNT}"
-if [[ ${SNAPSHOT_COUNT} -gt ${SNAPSHOT_PRESERVE_COUNT} ]]; then
-  TO_PURGE_SNAPSHOT_COUNT=$(expr ${SNAPSHOT_COUNT} - ${SNAPSHOT_PRESERVE_COUNT})
-  if [[ ${TO_PURGE_SNAPSHOT_COUNT} -gt 0 ]]; then
-    log user.info "Start pruning ${TO_PURGE_SNAPSHOT_COUNT} snapshot(s)"
-    for OLD_SNAPSHOT in `find ${FULL_SNAPSHOT_DIR} -mindepth 1 -maxdepth 1 -type d -printf "%P\n" | sort -n | head -${TO_PURGE_SNAPSHOT_COUNT}`
-    do
-      log user.info "Purged backup '${OLD_SNAPSHOT}'"
-      rm -rf ${FULL_SNAPSHOT_DIR}/${OLD_SNAPSHOT}
-      rm -rf ${INCR_SNAPSHOT_DIR}/${OLD_SNAPSHOT}
-    done
-  fi
+BACKUP_COUNT=`find ${BACKUP_DIR} -mindepth 1 -maxdepth 1 -type d | wc -l`
+log user.info "Current backups : ${BACKUP_COUNT}/${BACKUP_TTL}"
+if [[ ${BACKUP_COUNT} -gt ${BACKUP_TTL} ]]; then
+  TO_PURGE_BACKUP_COUNT=$(expr ${BACKUP_COUNT} - ${BACKUP_TTL})
+  log user.info "Pruning ${TO_PURGE_BACKUP_COUNT} expired backup(s)"
+  for OLD_BACKUP in `find ${BACKUP_DIR} -mindepth 1 -maxdepth 1 -type d -printf "%P\n" | sort -n | head -${TO_PURGE_BACKUP_COUNT}`
+  do
+    rm -rf ${BACKUP_DIR}/${OLD_BACKUP}
+    log user.info "'${OLD_BACKUP}' backup pruned"
+  done
 fi
 
 # Create log entry for backup trace
@@ -233,7 +260,7 @@ log user.info "Backup completed in ${DURATION} seconds"
 
 # Notify #devops on Slack network if webhook is specified
 if [[ -n ${SLACK_WEBHOOK_URL} ]]; then
-  SUCCESS_MESSAGE="MariaDB snapshot completed in ${DURATION} second(s)"
+  SUCCESS_MESSAGE="MariaDB backup completed in ${DURATION} second(s)"
   notify_slack "${SUCCESS_MESSAGE}"
 fi
 
