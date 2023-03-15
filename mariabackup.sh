@@ -39,7 +39,7 @@ BACKUP_TTL=3
 MARIABACKUP_ARGS=""
 
 # Retrieve configuration file from argument
-while [[ $# > 1 ]]; do
+while [[ $# -gt 1 ]]; do
     case $1 in
         # Configuration file (-c|--config)
         -c|--config)
@@ -115,7 +115,7 @@ notify_slack() {
   # Notify #devops on Slack network if webhook is specified
   if [[ -n ${SLACK_WEBHOOK_URL} ]]; then
     printf -v JSON '{"text":"[%s][%s] %s"}' ${HOST} ${RUN_DATE} "$1"
-    ${CURL} -X POST -H 'Content-type: application/json' --data "$JSON" ${SLACK_WEBHOOK_URL} > /dev/null 2>&1
+    ${CURL} -X POST -H 'Content-type: application/json' --data  --insecure"$JSON" ${SLACK_WEBHOOK_URL} > /dev/null 2>&1
   fi
   return 0
 }
