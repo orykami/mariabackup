@@ -115,7 +115,7 @@ notify_slack() {
   # Notify #devops on Slack network if webhook is specified
   if [[ -n ${SLACK_WEBHOOK_URL} ]]; then
     printf -v JSON '{"text":"[%s][%s] %s"}' ${HOST} ${RUN_DATE} "$1"
-    ${CURL} -X POST -H 'Content-type: application/json' --data  --insecure"$JSON" ${SLACK_WEBHOOK_URL} > /dev/null 2>&1
+    ${CURL} -X POST -H 'Content-type: application/json' --data  --insecure "$JSON" ${SLACK_WEBHOOK_URL} > /dev/null 2>&1
   fi
   return 0
 }
