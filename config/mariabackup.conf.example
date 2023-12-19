@@ -5,7 +5,7 @@ MYSQL_PASSWORD='mySecretPassword'
 # MariaDB host
 MYSQL_HOST='localhost'
 # MariaDB port
-MYSQL_PORT=3306
+MYSQL_PORT=
 # Arguments to mariabackup command
 MARIABACKUP_ARGS='--galera-info'
 # How many threads should we used by mariabackup command
@@ -18,3 +18,5 @@ MYDUMPER_THREADS=4
 BACKUP_TTL=3
 # Slack Webhook URL to notify from backup state (keep it secret !)
 SLACK_WEBHOOK_URL='https://hooks.slack.com/services/xxxxx/xxxxx'
+# Slack message prefix (optional)
+# SLACK_PREFIX=''

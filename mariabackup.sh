@@ -21,6 +21,8 @@ MYSQL_PORT=3306
 MYSQL="$(which mysql)"
 # Webhook URL to notify for backup status
 SLACK_WEBHOOK_URL=""
+# Slack notification prefix
+SLACK_PREFIX=""
 # Path to `mariabackup` binary on your system
 MARIABACKUP="$(which mariabackup)"
 # Path to `myumper` binary on your system
@@ -114,8 +116,8 @@ log() {
 notify_slack() {
   # Notify #devops on Slack network if webhook is specified
   if [[ -n ${SLACK_WEBHOOK_URL} ]]; then
-    printf -v JSON '{"text":"[%s][%s] %s"}' ${HOST} ${RUN_DATE} "$1"
-    ${CURL} -X POST -H 'Content-type: application/json' --data  --insecure"$JSON" ${SLACK_WEBHOOK_URL} > /dev/null 2>&1
+    printf -v JSON '{"text":"[%s%s][%s] %s"}' "${SLACK_PREFIX}" ${HOST} ${RUN_DATE} "$1"
+    ${CURL} -X POST -H 'Content-type: application/json' --insecure --data  "$JSON" ${SLACK_WEBHOOK_URL} > /dev/null 2>&1
   fi
   return 0
 }
@@ -139,7 +141,7 @@ do_dumps_backup() {
         --routines \
         --build-empty-files \
         --verbose 3 \
-        --regex '^(?!(mysql|test|performance_schema|information_schema))' \
+        --regex '^(?!(mysql|test|performance_schema|information_schema|sys))' \
         --logfile ${CURRENT_BACKUP_DIR}/${TIME}/mydumper.log
 
     if [[ $? -ne 0 ]]
